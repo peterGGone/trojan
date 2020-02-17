@@ -1,7 +1,7 @@
 /*
  * This file is part of the trojan project.
  * Trojan is an unidentifiable mechanism that helps you bypass GFW.
- * Copyright (C) 2017-2019  GreaterFire, ffftwo
+ * Copyright (C) 2017-2020  The Trojan Authors.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <boost/property_tree/json_parser.hpp>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 using namespace std;
 using namespace boost::property_tree;
 
@@ -71,6 +71,7 @@ void Config::populate(const ptree &tree) {
     ssl.key = tree.get("ssl.key", string());
     ssl.key_password = tree.get("ssl.key_password", string());
     ssl.cipher = tree.get("ssl.cipher", string());
+    ssl.cipher_tls13 = tree.get("ssl.cipher_tls13", string());
     ssl.prefer_server_cipher = tree.get("ssl.prefer_server_cipher", true);
     ssl.sni = tree.get("ssl.sni", string());
     ssl.alpn = "";
@@ -88,6 +89,7 @@ void Config::populate(const ptree &tree) {
     tcp.prefer_ipv4 = tree.get("tcp.prefer_ipv4", false);
     tcp.no_delay = tree.get("tcp.no_delay", true);
     tcp.keep_alive = tree.get("tcp.keep_alive", true);
+    tcp.reuse_port = tree.get("tcp.reuse_port", false);
     tcp.fast_open = tree.get("tcp.fast_open", false);
     tcp.fast_open_qlen = tree.get("tcp.fast_open_qlen", 20);
     mysql.enabled = tree.get("mysql.enabled", false);
@@ -124,14 +126,30 @@ bool Config::sip003() {
 }
 
 string Config::SHA224(const string &message) {
-    uint8_t digest[SHA224_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA224_Init(&ctx);
-    SHA224_Update(&ctx, message.c_str(), message.length());
-    SHA224_Final(digest, &ctx);
-    char mdString[(SHA224_DIGEST_LENGTH << 1) + 1];
-    for (int i = 0; i < SHA224_DIGEST_LENGTH; ++i) {
+    uint8_t digest[EVP_MAX_MD_SIZE];
+    char mdString[(EVP_MAX_MD_SIZE << 1) + 1];
+    unsigned int digest_len;
+    EVP_MD_CTX *ctx;
+    if ((ctx = EVP_MD_CTX_new()) == NULL) {
+        throw runtime_error("could not create hash context");
+    }
+    if (!EVP_DigestInit_ex(ctx, EVP_sha224(), NULL)) {
+        EVP_MD_CTX_free(ctx);
+        throw runtime_error("could not initialize hash context");
+    }
+    if (!EVP_DigestUpdate(ctx, message.c_str(), message.length())) {
+        EVP_MD_CTX_free(ctx);
+        throw runtime_error("could not update hash");
+    }
+    if (!EVP_DigestFinal_ex(ctx, digest, &digest_len)) {
+        EVP_MD_CTX_free(ctx);
+        throw runtime_error("could not output hash");
+    }
+
+    for (unsigned int i = 0; i < digest_len; ++i) {
         sprintf(mdString + (i << 1), "%02x", (unsigned int)digest[i]);
     }
+    mdString[digest_len << 1] = '\0';
+    EVP_MD_CTX_free(ctx);
     return string(mdString);
 }

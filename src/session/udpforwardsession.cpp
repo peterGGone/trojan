@@ -1,7 +1,7 @@
 /*
  * This file is part of the trojan project.
  * Trojan is an unidentifiable mechanism that helps you bypass GFW.
- * Copyright (C) 2017-2019  GreaterFire
+ * Copyright (C) 2017-2020  The Trojan Authors.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -181,8 +181,9 @@ void UDPForwardSession::out_recv(const string &data) {
         udp_data_buf += data;
         for (;;) {
             UDPPacket packet;
-            int packet_len = packet.parse(udp_data_buf);
-            if (packet_len == -1) {
+            size_t packet_len;
+            bool is_packet_valid = packet.parse(udp_data_buf, packet_len);
+            if (!is_packet_valid) {
                 if (udp_data_buf.length() > MAX_LENGTH) {
                     Log::log_with_endpoint(in_endpoint, "UDP packet too long", Log::ERROR);
                     destroy();
